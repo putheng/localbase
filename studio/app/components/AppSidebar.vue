@@ -5,6 +5,7 @@ const { keyspaces, activeKeyspace, selectKeyspace } = useDatabase()
 const navItems = [
   { label: 'Table Editor', icon: 'table', to: '/' },
   { label: 'SQL Editor', icon: 'terminal', to: '/query' },
+  { label: 'Storage', icon: 'storage', to: '/storage' },
 ]
 
 function isActive(to: string) {
@@ -62,6 +63,12 @@ function isActive(to: string) {
         <svg v-else-if="item.icon === 'terminal'" class="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
           <polyline points="4 17 10 11 4 5"/>
           <line x1="12" y1="19" x2="20" y2="19"/>
+        </svg>
+        <!-- Storage icon -->
+        <svg v-else-if="item.icon === 'storage'" class="size-4 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+          <ellipse cx="12" cy="5" rx="9" ry="3"/>
+          <path d="M21 12c0 1.66-4.03 3-9 3S3 13.66 3 12"/>
+          <path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/>
         </svg>
         {{ item.label }}
       </NuxtLink>
