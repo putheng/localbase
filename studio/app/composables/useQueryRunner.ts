@@ -101,7 +101,7 @@ export const useQueryRunner = () => {
 
   function executeSelect(sql: string): { type: 'select', data: QueryResult } {
     const fromMatch = sql.match(/\bFROM\s+(?:(\w+)\.)?(\w+)/i)
-    if (!fromMatch) throw new Error('Invalid SELECT: missing FROM clause')
+    if (!fromMatch?.[2]) throw new Error('Invalid SELECT: missing table name in FROM clause')
 
     const { table } = resolveTable(fromMatch[1], fromMatch[2])
 

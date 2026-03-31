@@ -64,14 +64,85 @@ function closeEdit() {
   editingRowIndex.value = null
   editForm.value = {}
 }
+
+// ── Security Rules ────────────────────────────────────────────────────────────
+const showSecurityRules = ref(false)
+
+const OPERATIONS = ['SELECT', 'INSERT', 'UPDATE', 'DELETE'] as const
+type Operation = typeof OPERATIONS[number]
+
+const TARGETS = ['anon', 'authenticated'] as const
+type Target = typeof TARGETS[number]
+
+interface SecurityRule {
+  id: number
+  target: Target
+  role: string
+  operations: Operation[]
+  condition: string
+  description: string
+}
+
+const rules = ref<SecurityRule[]>([
+  { id: 1, target: 'authenticated', role: 'admin', operations: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'], condition: '', description: 'Full access for admins' },
+  { id: 2, target: 'anon', role: 'readonly', operations: ['SELECT'], condition: '', description: 'Read-only access' },
+])
+
+const newRule = ref({ target: 'anon' as Target, role: '', operations: [] as Operation[], condition: '', description: '' })
+const ruleError = ref('')
+
+function toggleOperation(op: Operation) {
+  const idx = newRule.value.operations.indexOf(op)
+  if (idx === -1) newRule.value.operations.push(op)
+  else newRule.value.operations.splice(idx, 1)
+}
+
+function addRule() {
+  ruleError.value = ''
+  if (!newRule.value.role.trim()) { ruleError.value = 'Role name is required'; return }
+  if (newRule.value.operations.length === 0) { ruleError.value = 'Select at least one operation'; return }
+  rules.value.push({
+    id: Date.now(),
+    target: newRule.value.target,
+    role: newRule.value.role.trim(),
+    operations: [...newRule.value.operations],
+    condition: newRule.value.condition.trim(),
+    description: newRule.value.description.trim(),
+  })
+  newRule.value = { target: 'anon', role: '', operations: [], condition: '', description: '' }
+}
+
+function removeRule(id: number) {
+  rules.value = rules.value.filter(r => r.id !== id)
+}
+
+const OP_COLOR: Record<Operation, string> = {
+  SELECT: 'bg-blue-500/15 text-blue-300 border-blue-500/30',
+  INSERT: 'bg-emerald-500/15 text-emerald-300 border-emerald-500/30',
+  UPDATE: 'bg-amber-500/15 text-amber-300 border-amber-500/30',
+  DELETE: 'bg-rose-500/15 text-rose-300 border-rose-500/30',
+}
 </script>
 
 <template>
   <div class="flex flex-col h-full overflow-hidden">
-    <!-- Column count info -->
-    <div class="flex items-center gap-4 px-4 py-2 bg-slate-900/50 border-b border-slate-800 shrink-0 text-xs text-slate-500">
-      <span>{{ table.columns.length }} columns</span>
-      <span>{{ table.rows.length }} rows</span>
+    <!-- Toolbar -->
+    <div class="flex items-center justify-between px-4 py-2 bg-slate-900/50 border-b border-slate-800 shrink-0">
+      <div class="flex items-center gap-3 text-xs text-slate-500">
+        <span>{{ table.columns.length }} columns</span>
+        <span class="text-slate-700">·</span>
+        <span>{{ table.rows.length }} rows</span>
+      </div>
+      <button
+        @click="showSecurityRules = true"
+        class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 hover:border-slate-600 rounded-md transition-colors"
+      >
+        <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+        </svg>
+        Security Rules
+        <span class="ml-0.5 size-4 flex items-center justify-center rounded-full bg-violet-500/20 text-violet-400 text-[10px] font-semibold">{{ rules.length }}</span>
+      </button>
     </div>
 
     <!-- Table -->
@@ -149,6 +220,201 @@ function closeEdit() {
         </tbody>
       </table>
     </div>
+
+  <!-- Security Rules Modal -->
+  <Teleport to="body">
+    <div
+      v-if="showSecurityRules"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      @click.self="showSecurityRules = false"
+    >
+      <div class="bg-slate-900 rounded-xl border border-slate-700 w-full max-w-2xl max-h-[88vh] flex flex-col shadow-2xl">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
+          <div class="flex items-center gap-2.5">
+            <div class="size-8 rounded-lg bg-violet-600/20 border border-violet-500/30 flex items-center justify-center">
+              <svg class="size-4 text-violet-400" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+              </svg>
+            </div>
+            <div>
+              <h2 class="text-base font-semibold text-slate-100">Security Rules</h2>
+              <p class="text-xs text-slate-500 mt-0.5">Table: <span class="text-violet-400">{{ table.name }}</span></p>
+            </div>
+          </div>
+          <button @click="showSecurityRules = false" class="text-slate-500 hover:text-slate-300 transition-colors p-1 rounded">
+            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="flex-1 overflow-y-auto">
+          <!-- Existing rules -->
+          <div class="px-6 pt-4 pb-2">
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-600 mb-2">Active Rules</p>
+            <div v-if="rules.length === 0" class="text-xs text-slate-600 py-4 text-center border border-dashed border-slate-800 rounded-lg">
+              No rules defined. All operations are allowed.
+            </div>
+            <div v-else class="flex flex-col gap-2">
+              <div
+                v-for="rule in rules"
+                :key="rule.id"
+                class="flex items-start gap-3 bg-slate-800/50 border border-slate-700/50 rounded-lg px-4 py-3"
+              >
+                <div class="flex-1 min-w-0">
+                  <div class="flex items-center gap-2 flex-wrap">
+                    <span
+                      class="text-[10px] font-semibold px-1.5 py-0.5 rounded border"
+                      :class="rule.target === 'authenticated'
+                        ? 'bg-violet-500/15 text-violet-300 border-violet-500/30'
+                        : 'bg-slate-500/15 text-slate-400 border-slate-500/30'"
+                    >{{ rule.target }}</span>
+                    <span class="text-sm font-medium text-slate-200">{{ rule.role }}</span>
+                    <div class="flex items-center gap-1 flex-wrap">
+                      <span
+                        v-for="op in rule.operations"
+                        :key="op"
+                        class="text-[10px] font-semibold px-1.5 py-0.5 rounded border"
+                        :class="OP_COLOR[op]"
+                      >{{ op }}</span>
+                    </div>
+                  </div>
+                  <p v-if="rule.condition" class="text-xs text-slate-500 font-mono mt-1 truncate">WHERE {{ rule.condition }}</p>
+                  <p v-if="rule.description" class="text-xs text-slate-600 mt-0.5">{{ rule.description }}</p>
+                </div>
+                <button
+                  @click="removeRule(rule.id)"
+                  class="shrink-0 size-6 flex items-center justify-center text-slate-700 hover:text-rose-400 hover:bg-rose-500/10 rounded transition-colors"
+                  title="Remove rule"
+                >
+                  <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polyline points="3 6 5 6 21 6"/>
+                    <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+                    <path d="M10 11v6M14 11v6"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Add new rule -->
+          <div class="px-6 pt-4 pb-6">
+            <p class="text-[10px] font-semibold uppercase tracking-wider text-slate-600 mb-3">Add Rule</p>
+            <div class="bg-slate-800/30 border border-slate-700/50 rounded-lg p-4 flex flex-col gap-3">
+              <!-- Target -->
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Target</label>
+                <div class="flex gap-2">
+                  <button
+                    v-for="t in TARGETS"
+                    :key="t"
+                    @click="newRule.target = t"
+                    class="flex-1 py-1.5 text-xs font-semibold rounded-md border transition-colors"
+                    :class="newRule.target === t
+                      ? t === 'authenticated'
+                        ? 'bg-violet-500/15 text-violet-300 border-violet-500/40 ring-1 ring-inset ring-violet-500/30'
+                        : 'bg-slate-500/15 text-slate-300 border-slate-500/40 ring-1 ring-inset ring-slate-500/30'
+                      : 'bg-slate-900 text-slate-600 border-slate-700 hover:border-slate-500 hover:text-slate-400'"
+                  >
+                    {{ t }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Role -->
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">Role / Principal</label>
+                <input
+                  v-model="newRule.role"
+                  type="text"
+                  placeholder="e.g. admin, service_account, readonly"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+                />
+              </div>
+
+              <!-- Operations -->
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-2">Allowed CQL Operations</label>
+                <div class="flex items-center gap-2">
+                  <button
+                    v-for="op in OPERATIONS"
+                    :key="op"
+                    @click="toggleOperation(op)"
+                    class="px-3 py-1.5 text-xs font-semibold rounded-md border transition-colors"
+                    :class="newRule.operations.includes(op)
+                      ? OP_COLOR[op] + ' ring-1 ring-inset ring-current'
+                      : 'bg-slate-900 text-slate-600 border-slate-700 hover:border-slate-500 hover:text-slate-400'"
+                  >
+                    {{ op }}
+                  </button>
+                </div>
+              </div>
+
+              <!-- Condition -->
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">
+                  Row-level Condition
+                  <span class="text-slate-600 font-normal ml-1">(optional · CQL WHERE expression)</span>
+                </label>
+                <div class="relative">
+                  <span class="absolute left-3 top-1/2 -translate-y-1/2 text-xs text-slate-600 font-mono select-none">WHERE</span>
+                  <input
+                    v-model="newRule.condition"
+                    type="text"
+                    placeholder="user_id = current_user()"
+                    class="w-full bg-slate-900 border border-slate-700 rounded-lg pl-16 pr-3 py-2 text-sm font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+                  />
+                </div>
+              </div>
+
+              <!-- Description -->
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1">
+                  Description
+                  <span class="text-slate-600 font-normal ml-1">(optional)</span>
+                </label>
+                <input
+                  v-model="newRule.description"
+                  type="text"
+                  placeholder="Short description of this rule"
+                  class="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-sm text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500"
+                />
+              </div>
+
+              <!-- Error -->
+              <div v-if="ruleError" class="flex items-center gap-2 bg-rose-950/50 border border-rose-800 rounded-lg px-3 py-2">
+                <svg class="size-3.5 text-rose-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                </svg>
+                <span class="text-xs text-rose-300">{{ ruleError }}</span>
+              </div>
+
+              <button
+                @click="addRule"
+                class="self-end flex items-center gap-1.5 px-4 py-2 text-sm font-medium bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors"
+              >
+                <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+                </svg>
+                Add Rule
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex items-center justify-end px-6 py-3 border-t border-slate-800 shrink-0">
+          <button
+            @click="showSecurityRules = false"
+            class="px-4 py-2 text-sm font-medium bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors"
+          >
+            Done
+          </button>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 
   <!-- Edit Row Modal -->
   <Teleport to="body">
