@@ -8,7 +8,7 @@ use crate::errors::ApiError;
 /// Validates a CQL identifier (keyspace / table / column name) to prevent injection.
 /// Only allows ASCII alphanumerics and underscores.
 pub fn validate_identifier(s: &str) -> Result<String, ApiError> {
-    let s = s.trim().to_string();
+    let s: String = s.trim().to_string();
     if s.is_empty() {
         return Err(ApiError::BadRequest(
             "identifier cannot be empty".to_string(),
@@ -25,7 +25,7 @@ pub fn validate_identifier(s: &str) -> Result<String, ApiError> {
 /// Converts a JSON value into a CQL literal string, quoting appropriately
 /// based on the column's declared CQL type.
 pub fn json_to_cql_literal(val: &Value, data_type: &str) -> String {
-    let dt = data_type.to_lowercase();
+    let dt: String = data_type.to_lowercase();
     match val {
         Value::Null => "null".to_string(),
         Value::Bool(b) => b.to_string(),
@@ -51,9 +51,9 @@ pub fn json_to_cql_literal(val: &Value, data_type: &str) -> String {
 /// "SELECT * FROM t" → "SELECT JSON * FROM t"
 /// "SELECT JSON * FROM t" → unchanged
 pub fn maybe_inject_select_json(query: &str) -> String {
-    let t = query.trim();
+    let t: &str = query.trim();
     if t.len() >= 6 && t[..6].eq_ignore_ascii_case("select") {
-        let after = t[6..].trim_start();
+        let after: &str = t[6..].trim_start();
         if after.len() >= 4 && after[..4].eq_ignore_ascii_case("json") {
             return t.to_string(); // already SELECT JSON
         }
@@ -69,7 +69,7 @@ pub async fn fetch_column_types(
     keyspace: &str,
     table: &str,
 ) -> Result<HashMap<String, String>, ApiError> {
-    let result = session
+    let result: scylla::QueryResult = session
         .query_unpaged(
             "SELECT column_name, type \
              FROM system_schema.columns \
@@ -79,10 +79,10 @@ pub async fn fetch_column_types(
         .await
         .map_err(|e| ApiError::Db(e.to_string()))?;
 
-    let rows_result = result
+    let rows_result: scylla::QueryRowsResult = result
         .into_rows_result()
         .map_err(|e| ApiError::Db(e.to_string()))?;
-    let map = rows_result
+    let map: HashMap<String, String> = rows_result
         .rows::<(String, String)>()
         .map_err(|e| ApiError::Db(e.to_string()))?
         .filter_map(|r: Result<(String, String), _>| r.ok())
