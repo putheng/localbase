@@ -23,34 +23,5 @@ services:
       start_period: 40s
     restart: unless-stopped
 
-  scylladb-init:
-    image: scylladb/scylla:6.2
-    container_name: localbase-scylladb-init
-    depends_on:
-      scylladb:
-        condition: service_healthy
-    environment:
-      SCYLLA_USERNAME: ${SCYLLA_USERNAME:-scylla_app}
-      SCYLLA_PASSWORD: ${SCYLLA_PASSWORD:-change_me_local}
-    entrypoint:
-      - /bin/sh
-      - -c
-      - |
-        set -e
-        echo "Waiting for CQL auth to be ready..."
-        until cqlsh scylladb -u cassandra -p cassandra -e "DESCRIBE KEYSPACES" >/dev/null 2>&1; do
-          sleep 2
-        done
-
-        cqlsh scylladb -u cassandra -p cassandra <<EOF
-        CREATE ROLE IF NOT EXISTS ${SCYLLA_USERNAME}
-          WITH PASSWORD = '${SCYLLA_PASSWORD}'
-          AND LOGIN = true
-          AND SUPERUSER = false;
-        EOF
-
-        echo "Scylla user '${SCYLLA_USERNAME}' ensured."
-    restart: "no"
-
 volumes:
   scylla-data:
