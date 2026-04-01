@@ -3,7 +3,7 @@ import type { Table } from '~/composables/useDatabase'
 
 const props = defineProps<{ table: Table }>()
 
-const { activeKeyspace, activeTable, updateRow, deleteRow } = useDatabase()
+const { activeKeyspace, activeTable, insertRow, updateRow, deleteRow } = useDatabase()
 
 const PAGE_SIZE = 50
 const currentPage = ref(1)
@@ -102,6 +102,46 @@ function closeEdit() {
   editError.value = null
 }
 
+// ── Insert row ────────────────────────────────────────────────────────────────
+const showInsertDialog = ref(false)
+const insertForm = ref<Record<string, string>>({})
+const isInserting = ref(false)
+const insertError = ref<string | null>(null)
+
+function openInsert() {
+  insertError.value = null
+  insertForm.value = Object.fromEntries(props.table.columns.map(col => [col.name, '']))
+  showInsertDialog.value = true
+}
+
+function closeInsert() {
+  showInsertDialog.value = false
+  insertForm.value = {}
+  insertError.value = null
+}
+
+async function handleInsert() {
+  isInserting.value = true
+  insertError.value = null
+  try {
+    const row: Record<string, unknown> = {}
+    for (const col of props.table.columns) {
+      const raw = insertForm.value[col.name] ?? ''
+      if (raw === '') { row[col.name] = null; continue }
+      if (col.type === 'boolean') row[col.name] = raw.toLowerCase() === 'true'
+      else if (['int', 'bigint', 'smallint', 'tinyint', 'varint', 'counter'].includes(col.type)) row[col.name] = Number(raw)
+      else if (['float', 'double', 'decimal'].includes(col.type)) row[col.name] = parseFloat(raw)
+      else row[col.name] = raw
+    }
+    await insertRow(activeKeyspace.value, activeTable.value!, row)
+    closeInsert()
+  } catch (e: unknown) {
+    insertError.value = e instanceof Error ? e.message : 'Failed to insert row'
+  } finally {
+    isInserting.value = false
+  }
+}
+
 // ── Security Rules ────────────────────────────────────────────────────────────
 const showSecurityRules = ref(false)
 
@@ -165,21 +205,28 @@ const OP_COLOR: Record<Operation, string> = {
   <div class="flex flex-col h-full overflow-hidden">
     <!-- Toolbar -->
     <div class="flex items-center justify-between px-4 py-2 bg-slate-900/50 border-b border-slate-800 shrink-0">
-      <div class="flex items-center gap-3 text-xs text-slate-500">
-        <span>{{ table.columns.length }} columns</span>
-        <span class="text-slate-700">·</span>
-        <span>{{ table.rows.length }} rows</span>
-      </div>
-      <button
-        @click="showSecurityRules = true"
-        class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 hover:border-slate-600 rounded-md transition-colors"
+      <span class="text-xs text-slate-500">{{ table.rows.length }} rows</span>
+      <div class="flex items-center gap-1.5">
+        <button
+          @click="openInsert"
+          class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 hover:border-slate-600 rounded-md transition-colors"
+        >
+          <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+          Insert Row
+        </button>
+        <button
+          @click="showSecurityRules = true"
+          class="flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium text-slate-400 hover:text-slate-200 bg-slate-800/60 hover:bg-slate-800 border border-slate-700/60 hover:border-slate-600 rounded-md transition-colors"
       >
         <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75">
           <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
         </svg>
-        Security Rules
-        <span class="ml-0.5 size-4 flex items-center justify-center rounded-full bg-violet-500/20 text-violet-400 text-[10px] font-semibold">{{ rules.length }}</span>
-      </button>
+          Security Rules
+          <span class="ml-0.5 size-4 flex items-center justify-center rounded-full bg-violet-500/20 text-violet-400 text-[10px] font-semibold">{{ rules.length }}</span>
+        </button>
+      </div>
     </div>
 
     <!-- Table -->
@@ -257,6 +304,145 @@ const OP_COLOR: Record<Operation, string> = {
         </tbody>
       </table>
     </div>
+
+  <!-- Insert Row Modal -->
+  <Teleport to="body">
+    <div
+      v-if="showInsertDialog"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      @click.self="closeInsert"
+    >
+      <div class="bg-slate-900 rounded-xl border border-slate-700 w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl">
+        <!-- Header -->
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
+          <div>
+            <h2 class="text-base font-semibold text-slate-100">Insert Row</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Table: <span class="text-violet-400">{{ table.name }}</span></p>
+          </div>
+          <button @click="closeInsert" class="text-slate-500 hover:text-slate-300 transition-colors p-1 rounded">
+            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <!-- Fields -->
+        <div class="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-3">
+          <div v-for="col in table.columns" :key="col.name">
+            <label class="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1">
+              <span v-if="col.isPartitionKey" class="size-1.5 rounded-full bg-amber-400 inline-block" title="Partition key"></span>
+              <span v-else-if="col.isClusteringKey" class="size-1.5 rounded-full bg-blue-400 inline-block" title="Clustering key"></span>
+              {{ col.name }}
+              <span class="text-slate-600 font-normal">{{ col.type }}</span>
+              <span v-if="col.isPartitionKey" class="text-amber-500/70 text-[10px] font-normal">(partition key)</span>
+              <span v-else-if="col.isClusteringKey" class="text-blue-500/70 text-[10px] font-normal">(clustering key)</span>
+            </label>
+            <input
+              v-model="insertForm[col.name]"
+              type="text"
+              :placeholder="col.isPartitionKey || col.isClusteringKey ? 'required' : 'null'"
+              :disabled="isInserting"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 transition-colors disabled:opacity-50"
+              :class="(col.isPartitionKey || col.isClusteringKey) ? 'border-amber-700/50 focus:ring-amber-500 focus:border-amber-500' : ''"
+            />
+          </div>
+        </div>
+        <!-- Footer -->
+        <div class="flex flex-col gap-2 px-6 py-4 border-t border-slate-800 shrink-0">
+          <div v-if="insertError" class="flex items-center gap-2 bg-rose-950/50 border border-rose-800 rounded-lg px-3 py-2">
+            <svg class="size-3.5 text-rose-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span class="text-xs text-rose-300">{{ insertError }}</span>
+          </div>
+          <div class="flex items-center justify-end gap-2.5">
+            <button
+              @click="closeInsert"
+              :disabled="isInserting"
+              class="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors rounded-lg hover:bg-slate-800 disabled:opacity-40"
+            >Cancel</button>
+            <button
+              @click="handleInsert"
+              :disabled="isInserting"
+              class="px-4 py-2 text-sm font-medium bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors disabled:opacity-60 flex items-center gap-1.5"
+            >
+              <svg v-if="isInserting" class="size-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+              {{ isInserting ? 'Inserting…' : 'Insert Row' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
+
+  <!-- Insert Row Modal -->
+  <Teleport to="body">
+    <div
+      v-if="showInsertDialog"
+      class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm"
+      @click.self="closeInsert"
+    >
+      <div class="bg-slate-900 rounded-xl border border-slate-700 w-full max-w-lg max-h-[85vh] flex flex-col shadow-2xl">
+        <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800 shrink-0">
+          <div>
+            <h2 class="text-base font-semibold text-slate-100">Insert Row</h2>
+            <p class="text-xs text-slate-500 mt-0.5">Table: <span class="text-violet-400">{{ table.name }}</span></p>
+          </div>
+          <button @click="closeInsert" class="text-slate-500 hover:text-slate-300 transition-colors p-1 rounded">
+            <svg class="size-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto px-6 py-4 flex flex-col gap-3">
+          <div v-for="col in table.columns" :key="col.name">
+            <label class="flex items-center gap-1.5 text-xs font-medium text-slate-400 mb-1">
+              <span v-if="col.isPartitionKey" class="size-1.5 rounded-full bg-amber-400 inline-block" title="Partition key"></span>
+              <span v-else-if="col.isClusteringKey" class="size-1.5 rounded-full bg-blue-400 inline-block" title="Clustering key"></span>
+              {{ col.name }}
+              <span class="text-slate-600 font-normal">{{ col.type }}</span>
+              <span v-if="col.isPartitionKey" class="text-amber-500/70 text-[10px] font-normal">(partition key)</span>
+              <span v-else-if="col.isClusteringKey" class="text-blue-500/70 text-[10px] font-normal">(clustering key)</span>
+            </label>
+            <input
+              v-model="insertForm[col.name]"
+              type="text"
+              :placeholder="col.isPartitionKey || col.isClusteringKey ? 'required' : 'null'"
+              :disabled="isInserting"
+              class="w-full bg-slate-800 border border-slate-700 rounded-lg px-3 py-2 text-sm font-mono text-slate-100 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 transition-colors disabled:opacity-50"
+              :class="(col.isPartitionKey || col.isClusteringKey) ? 'border-amber-700/50 focus:ring-amber-500 focus:border-amber-500' : ''"
+            />
+          </div>
+        </div>
+        <div class="flex flex-col gap-2 px-6 py-4 border-t border-slate-800 shrink-0">
+          <div v-if="insertError" class="flex items-center gap-2 bg-rose-950/50 border border-rose-800 rounded-lg px-3 py-2">
+            <svg class="size-3.5 text-rose-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span class="text-xs text-rose-300">{{ insertError }}</span>
+          </div>
+          <div class="flex items-center justify-end gap-2.5">
+            <button
+              @click="closeInsert"
+              :disabled="isInserting"
+              class="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors rounded-lg hover:bg-slate-800 disabled:opacity-40"
+            >Cancel</button>
+            <button
+              @click="handleInsert"
+              :disabled="isInserting"
+              class="px-4 py-2 text-sm font-medium bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors disabled:opacity-60 flex items-center gap-1.5"
+            >
+              <svg v-if="isInserting" class="size-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+              </svg>
+              {{ isInserting ? 'Inserting…' : 'Insert Row' }}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </Teleport>
 
   <!-- Security Rules Modal -->
   <Teleport to="body">
