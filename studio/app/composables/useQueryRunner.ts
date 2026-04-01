@@ -24,6 +24,7 @@ interface ApiQueryResponse {
 
 export const useQueryRunner = () => {
   const api = useApi()
+  const { activeKeyspace } = useDatabase()
 
   const queryHistory = useState<QueryExecution[]>('query_history', () => [])
   const lastResult = useState<QueryResult | null>('query_lastResult', () => null)
@@ -31,6 +32,27 @@ export const useQueryRunner = () => {
   const isRunning = useState<boolean>('query_isRunning', () => false)
   const isError = useState<boolean>('query_isError', () => false)
   const executionTime = useState<number>('query_execTime', () => 0)
+
+  /**
+   * Prepend the active keyspace to any table reference that isn't already
+   * qualified (i.e. does not have a "keyspace." prefix). Handles:
+   *   SELECT * FROM table
+   *   INSERT INTO table
+   *   UPDATE table
+   *   TRUNCATE table
+   *   CREATE TABLE [IF NOT EXISTS] table
+   *   DROP TABLE [IF EXISTS] table
+   */
+  function qualifyTables(cql: string, ks: string): string {
+    if (!ks) return cql
+    return cql
+      .replace(/\b(FROM)\s+(?!\w+\.)/gi, `$1 ${ks}.`)
+      .replace(/\b(INTO)\s+(?!\w+\.)/gi, `$1 ${ks}.`)
+      .replace(/\b(UPDATE)\s+(?!\w+\.)/gi, `$1 ${ks}.`)
+      .replace(/\b(TRUNCATE)\s+(?!\w+\.)/gi, `$1 ${ks}.`)
+      .replace(/\b(CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?)\s+(?!\w+\.)/gi, `$1 ${ks}.`)
+      .replace(/\b(DROP\s+TABLE(?:\s+IF\s+EXISTS)?)\s+(?!\w+\.)/gi, `$1 ${ks}.`)
+  }
 
   async function runQuery(sql: string) {
     if (!sql.trim()) return
@@ -41,7 +63,8 @@ export const useQueryRunner = () => {
 
     const clientStart = Date.now()
     try {
-      const data = await api.post<ApiQueryResponse>('/meta/query', { query: sql.trim() })
+      const qualified = qualifyTables(sql.trim(), activeKeyspace.value)
+      const data = await api.post<ApiQueryResponse>('/meta/query', { query: qualified })
 
       executionTime.value = data.execution_time_ms ?? (Date.now() - clientStart)
 
