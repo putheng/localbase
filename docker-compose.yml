@@ -1,0 +1,56 @@
+services:
+  scylladb:
+    image: scylladb/scylla:6.2
+    container_name: localbase-scylladb
+    command: >
+      --smp 1
+      --memory 750M
+      --overprovisioned 1
+      --developer-mode 1
+      --authenticator PasswordAuthenticator
+      --authorizer CassandraAuthorizer
+    ports:
+      - "9042:9042"
+      - "9160:9160"
+      - "10000:10000"
+    volumes:
+      - scylla-data:/var/lib/scylla
+    healthcheck:
+      test: ["CMD-SHELL", "nodetool status || exit 1"]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 40s
+    restart: unless-stopped
+
+  scylladb-init:
+    image: scylladb/scylla:6.2
+    container_name: localbase-scylladb-init
+    depends_on:
+      scylladb:
+        condition: service_healthy
+    environment:
+      SCYLLA_USERNAME: ${SCYLLA_USERNAME:-scylla_app}
+      SCYLLA_PASSWORD: ${SCYLLA_PASSWORD:-change_me_local}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "Waiting for CQL auth to be ready..."
+        until cqlsh scylladb -u cassandra -p cassandra -e "DESCRIBE KEYSPACES" >/dev/null 2>&1; do
+          sleep 2
+        done
+
+        cqlsh scylladb -u cassandra -p cassandra <<EOF
+        CREATE ROLE IF NOT EXISTS ${SCYLLA_USERNAME}
+          WITH PASSWORD = '${SCYLLA_PASSWORD}'
+          AND LOGIN = true
+          AND SUPERUSER = false;
+        EOF
+
+        echo "Scylla user '${SCYLLA_USERNAME}' ensured."
+    restart: "no"
+
+volumes:
+  scylla-data:
