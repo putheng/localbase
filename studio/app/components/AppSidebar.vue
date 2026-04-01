@@ -1,6 +1,10 @@
 <script setup lang="ts">
 const route = useRoute()
-const { keyspaces, activeKeyspace, selectKeyspace } = useDatabase()
+const { keyspaces, activeKeyspace, isLoadingKeyspaces, loadKeyspaces, selectKeyspace, createKeyspace } = useDatabase()
+
+onMounted(async () => {
+  await loadKeyspaces()
+})
 
 const navItems = [
   { label: 'Table Editor', icon: 'table', to: '/' },
@@ -11,6 +15,40 @@ const navItems = [
 function isActive(to: string) {
   if (to === '/') return route.path === '/'
   return route.path.startsWith(to)
+}
+
+// ── Create Keyspace dialog ──────────────────────────────────────────────────
+const showCreateDialog = ref(false)
+const newKsName = ref('')
+const newKsRf = ref(1)
+const isCreating = ref(false)
+const createError = ref('')
+
+function openCreate() {
+  newKsName.value = ''
+  newKsRf.value = 1
+  createError.value = ''
+  showCreateDialog.value = true
+}
+
+function closeCreate() {
+  showCreateDialog.value = false
+}
+
+async function handleCreate() {
+  const name = newKsName.value.trim()
+  if (!name) { createError.value = 'Keyspace name is required.'; return }
+  if (!/^[a-zA-Z][a-zA-Z0-9_]*$/.test(name)) { createError.value = 'Only letters, digits, and underscores (must start with a letter).'; return }
+  isCreating.value = true
+  createError.value = ''
+  try {
+    await createKeyspace(name, newKsRf.value)
+    showCreateDialog.value = false
+  } catch (e: unknown) {
+    createError.value = e instanceof Error ? e.message : String(e)
+  } finally {
+    isCreating.value = false
+  }
 }
 </script>
 
@@ -32,16 +70,102 @@ function isActive(to: string) {
     <!-- Keyspace selector -->
     <div class="px-3 py-3 border-b border-slate-800 shrink-0">
       <label class="block text-[10px] font-semibold uppercase tracking-wider text-slate-500 mb-1.5 px-1">Keyspace</label>
-      <select
-        :value="activeKeyspace"
-        @change="selectKeyspace(($event.target as HTMLSelectElement).value)"
-        class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 cursor-pointer"
-      >
-        <option v-for="ks in keyspaces" :key="ks.name" :value="ks.name">
-          {{ ks.name }}
-        </option>
-      </select>
+      <div class="flex gap-1.5">
+        <select
+          :value="activeKeyspace"
+          :disabled="isLoadingKeyspaces"
+          @change="selectKeyspace(($event.target as HTMLSelectElement).value)"
+          class="flex-1 min-w-0 bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-md px-2.5 py-1.5 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 cursor-pointer disabled:opacity-50 disabled:cursor-wait"
+        >
+          <option v-if="isLoadingKeyspaces" disabled value="">Loading…</option>
+          <option v-for="ks in keyspaces" :key="ks.name" :value="ks.name">
+            {{ ks.name }}
+          </option>
+        </select>
+        <button
+          @click="openCreate"
+          title="Create keyspace"
+          class="shrink-0 flex items-center justify-center size-7.5 rounded-md bg-slate-800 border border-slate-700 text-slate-400 hover:text-violet-300 hover:border-violet-500 transition-colors"
+        >
+          <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <path d="M12 5v14M5 12h14"/>
+          </svg>
+        </button>
+      </div>
     </div>
+
+    <!-- Create Keyspace dialog -->
+    <Teleport to="body">
+      <Transition
+        enter-active-class="transition duration-150 ease-out"
+        enter-from-class="opacity-0"
+        enter-to-class="opacity-100"
+        leave-active-class="transition duration-100 ease-in"
+        leave-from-class="opacity-100"
+        leave-to-class="opacity-0"
+      >
+        <div v-if="showCreateDialog" class="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" @click.self="closeCreate">
+          <div class="w-full max-w-sm bg-slate-900 border border-slate-700 rounded-xl shadow-2xl">
+            <!-- Header -->
+            <div class="flex items-center justify-between px-5 py-4 border-b border-slate-800">
+              <h2 class="text-sm font-semibold text-slate-100">Create Keyspace</h2>
+              <button @click="closeCreate" class="text-slate-500 hover:text-slate-300 transition-colors">
+                <svg class="size-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M18 6L6 18M6 6l12 12"/>
+                </svg>
+              </button>
+            </div>
+
+            <!-- Form -->
+            <div class="px-5 py-4 space-y-4">
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1.5">Keyspace Name</label>
+                <input
+                  v-model="newKsName"
+                  type="text"
+                  placeholder="my_keyspace"
+                  :disabled="isCreating"
+                  @keydown.enter="handleCreate"
+                  class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-md px-3 py-2 placeholder-slate-600 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 disabled:opacity-50"
+                />
+              </div>
+              <div>
+                <label class="block text-xs font-medium text-slate-400 mb-1.5">Replication Factor</label>
+                <input
+                  v-model.number="newKsRf"
+                  type="number"
+                  min="1"
+                  max="9"
+                  :disabled="isCreating"
+                  class="w-full bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded-md px-3 py-2 focus:outline-none focus:ring-1 focus:ring-violet-500 focus:border-violet-500 disabled:opacity-50"
+                />
+                <p class="mt-1 text-[11px] text-slate-500">SimpleStrategy — sets the number of data replicas.</p>
+              </div>
+              <p v-if="createError" class="text-xs text-rose-400">{{ createError }}</p>
+            </div>
+
+            <!-- Footer -->
+            <div class="flex justify-end gap-2 px-5 py-4 border-t border-slate-800">
+              <button
+                @click="closeCreate"
+                :disabled="isCreating"
+                class="px-3 py-1.5 text-sm text-slate-400 hover:text-slate-200 transition-colors disabled:opacity-50"
+              >Cancel</button>
+              <button
+                @click="handleCreate"
+                :disabled="isCreating"
+                class="px-4 py-1.5 text-sm font-medium bg-violet-600 hover:bg-violet-500 text-white rounded-md transition-colors disabled:opacity-50 disabled:cursor-wait flex items-center gap-1.5"
+              >
+                <svg v-if="isCreating" class="size-3.5 animate-spin" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                  <path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/>
+                </svg>
+                {{ isCreating ? 'Creating…' : 'Create' }}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Transition>
+    </Teleport>
 
     <!-- Navigation -->
     <nav class="flex flex-col gap-0.5 px-2 py-3 flex-1 overflow-y-auto">

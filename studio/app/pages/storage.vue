@@ -313,7 +313,7 @@ function onFileInputChange(e: Event) {
                       class="accent-violet-500 cursor-pointer"
                     />
                   </th>
-                  <th class="px-3 py-2.5 text-left border-b border-r border-slate-800 text-xs font-medium text-slate-400 min-w-[280px]">Name</th>
+                  <th class="px-3 py-2.5 text-left border-b border-r border-slate-800 text-xs font-medium text-slate-400 min-w-70">Name</th>
                   <th class="px-4 py-2.5 text-left border-b border-r border-slate-800 text-xs font-medium text-slate-400 w-36">MIME Type</th>
                   <th class="px-4 py-2.5 text-left border-b border-r border-slate-800 text-xs font-medium text-slate-400 w-24">Size</th>
                   <th class="px-4 py-2.5 text-left border-b border-r border-slate-800 text-xs font-medium text-slate-400 w-40">Last Modified</th>
@@ -468,7 +468,7 @@ function onFileInputChange(e: Event) {
               >
                 <span
                   class="absolute top-0.5 size-5 rounded-full bg-white shadow transition-all duration-200"
-                  :class="newBucketPublic ? 'left-[22px]' : 'left-0.5'"
+                  :class="newBucketPublic ? 'left-5.5' : 'left-0.5'"
                 ></span>
               </button>
             </div>

@@ -1,3 +1,7 @@
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+import { useApi } from './useApi'
+
 export interface Column {
   name: string
   type: string
@@ -19,143 +23,72 @@ export interface Keyspace {
   tables: Table[]
 }
 
-const INITIAL_DATA: Keyspace[] = [
-  {
-    name: 'ecommerce',
-    replicationStrategy: 'SimpleStrategy',
-    replicationFactor: 3,
-    tables: [
-      {
-        name: 'users',
-        columns: [
-          { name: 'user_id', type: 'uuid', isPartitionKey: true, isClusteringKey: false, isPrimaryKey: true },
-          { name: 'email', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'username', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'full_name', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'created_at', type: 'timestamp', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'is_active', type: 'boolean', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-        ],
-        rows: [
-          { user_id: '550e8400-e29b-41d4-a716-446655440001', email: 'alice@example.com', username: 'alice_wonder', full_name: 'Alice Wonderland', created_at: '2024-01-15 10:23:45', is_active: true },
-          { user_id: '550e8400-e29b-41d4-a716-446655440002', email: 'bob@example.com', username: 'bob_builder', full_name: 'Bob Builder', created_at: '2024-02-20 14:45:01', is_active: true },
-          { user_id: '550e8400-e29b-41d4-a716-446655440003', email: 'carol@example.com', username: 'carol_k', full_name: 'Carol King', created_at: '2024-03-01 09:12:33', is_active: false },
-          { user_id: '550e8400-e29b-41d4-a716-446655440004', email: 'dave@example.com', username: 'dave99', full_name: 'Dave Smith', created_at: '2024-03-10 16:08:22', is_active: true },
-          { user_id: '550e8400-e29b-41d4-a716-446655440005', email: 'eve@example.com', username: 'eve_online', full_name: 'Eve Adams', created_at: '2024-04-05 11:55:10', is_active: true },
-          { user_id: '550e8400-e29b-41d4-a716-446655440006', email: 'frank@example.com', username: 'frank_sinatra', full_name: 'Frank Sinatra', created_at: '2024-04-12 08:30:00', is_active: false },
-        ],
-      },
-      {
-        name: 'products',
-        columns: [
-          { name: 'product_id', type: 'uuid', isPartitionKey: true, isClusteringKey: false, isPrimaryKey: true },
-          { name: 'category', type: 'text', isPartitionKey: false, isClusteringKey: true, isPrimaryKey: true },
-          { name: 'name', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'price', type: 'decimal', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'stock', type: 'int', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'description', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-        ],
-        rows: [
-          { product_id: 'a72e8400-e29b-41d4-a716-446655440001', category: 'Electronics', name: 'Wireless Headphones', price: 79.99, stock: 150, description: 'High-quality wireless headphones with 40h battery' },
-          { product_id: 'a72e8400-e29b-41d4-a716-446655440002', category: 'Electronics', name: 'Mechanical Keyboard', price: 129.00, stock: 85, description: 'RGB mechanical keyboard, Cherry MX switches' },
-          { product_id: 'a72e8400-e29b-41d4-a716-446655440003', category: 'Clothing', name: 'Running Shoes', price: 99.95, stock: 200, description: 'Lightweight breathable running shoes' },
-          { product_id: 'a72e8400-e29b-41d4-a716-446655440004', category: 'Books', name: 'Clean Code', price: 34.50, stock: 45, description: 'A handbook of agile software craftsmanship' },
-          { product_id: 'a72e8400-e29b-41d4-a716-446655440005', category: 'Electronics', name: '4K Monitor', price: 449.99, stock: 30, description: '27" 4K IPS monitor 144Hz' },
-        ],
-      },
-      {
-        name: 'orders',
-        columns: [
-          { name: 'order_id', type: 'uuid', isPartitionKey: true, isClusteringKey: false, isPrimaryKey: true },
-          { name: 'user_id', type: 'uuid', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'total', type: 'decimal', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'status', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'created_at', type: 'timestamp', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-        ],
-        rows: [
-          { order_id: 'b82e8400-e29b-41d4-a716-446655440001', user_id: '550e8400-e29b-41d4-a716-446655440001', total: 209.99, status: 'delivered', created_at: '2024-05-01 10:00:00' },
-          { order_id: 'b82e8400-e29b-41d4-a716-446655440002', user_id: '550e8400-e29b-41d4-a716-446655440002', total: 34.50, status: 'shipped', created_at: '2024-05-05 14:30:00' },
-          { order_id: 'b82e8400-e29b-41d4-a716-446655440003', user_id: '550e8400-e29b-41d4-a716-446655440001', total: 99.95, status: 'pending', created_at: '2024-05-10 09:15:00' },
-          { order_id: 'b82e8400-e29b-41d4-a716-446655440004', user_id: '550e8400-e29b-41d4-a716-446655440003', total: 579.99, status: 'processing', created_at: '2024-05-12 17:00:00' },
-        ],
-      },
-      {
-        name: 'sessions',
-        columns: [
-          { name: 'session_id', type: 'uuid', isPartitionKey: true, isClusteringKey: false, isPrimaryKey: true },
-          { name: 'user_id', type: 'uuid', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'ip_address', type: 'inet', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'user_agent', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'expires_at', type: 'timestamp', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-        ],
-        rows: [
-          { session_id: 'c92e8400-e29b-41d4-a716-446655440001', user_id: '550e8400-e29b-41d4-a716-446655440001', ip_address: '192.168.1.10', user_agent: 'Mozilla/5.0 Chrome/120', expires_at: '2024-05-13 10:00:00' },
-          { session_id: 'c92e8400-e29b-41d4-a716-446655440002', user_id: '550e8400-e29b-41d4-a716-446655440002', ip_address: '10.0.0.55', user_agent: 'Mozilla/5.0 Firefox/121', expires_at: '2024-05-14 08:00:00' },
-        ],
-      },
-    ],
-  },
-  {
-    name: 'analytics',
-    replicationStrategy: 'NetworkTopologyStrategy',
-    replicationFactor: 2,
-    tables: [
-      {
-        name: 'page_views',
-        columns: [
-          { name: 'date', type: 'date', isPartitionKey: true, isClusteringKey: false, isPrimaryKey: true },
-          { name: 'page', type: 'text', isPartitionKey: false, isClusteringKey: true, isPrimaryKey: true },
-          { name: 'views', type: 'counter', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'unique_visitors', type: 'counter', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-        ],
-        rows: [
-          { date: '2024-05-01', page: '/home', views: 12450, unique_visitors: 8320 },
-          { date: '2024-05-01', page: '/products', views: 7830, unique_visitors: 5410 },
-          { date: '2024-05-02', page: '/home', views: 11200, unique_visitors: 7900 },
-          { date: '2024-05-02', page: '/checkout', views: 3200, unique_visitors: 2800 },
-        ],
-      },
-      {
-        name: 'events',
-        columns: [
-          { name: 'event_id', type: 'uuid', isPartitionKey: true, isClusteringKey: false, isPrimaryKey: true },
-          { name: 'event_type', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'user_id', type: 'uuid', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'properties', type: 'map<text, text>', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'timestamp', type: 'timestamp', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-        ],
-        rows: [
-          { event_id: 'd02e8400-e29b-41d4-a716-446655440001', event_type: 'page_view', user_id: '550e8400-e29b-41d4-a716-446655440001', properties: '{page: /home}', timestamp: '2024-05-10 10:00:01' },
-          { event_id: 'd02e8400-e29b-41d4-a716-446655440002', event_type: 'click', user_id: '550e8400-e29b-41d4-a716-446655440002', properties: '{element: buy-btn}', timestamp: '2024-05-10 10:05:22' },
-        ],
-      },
-    ],
-  },
-  {
-    name: 'system',
-    replicationStrategy: 'LocalStrategy',
-    replicationFactor: 1,
-    tables: [
-      {
-        name: 'local',
-        columns: [
-          { name: 'key', type: 'text', isPartitionKey: true, isClusteringKey: false, isPrimaryKey: true },
-          { name: 'cluster_name', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'release_version', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'cql_version', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-          { name: 'data_center', type: 'text', isPartitionKey: false, isClusteringKey: false, isPrimaryKey: false },
-        ],
-        rows: [
-          { key: 'local', cluster_name: 'My ScyllaDB Cluster', release_version: '5.4.0', cql_version: '3.3.1', data_center: 'datacenter1' },
-        ],
-      },
-    ],
-  },
-]
+// ── Raw API shapes ─────────────────────────────────────────────────────────────
+
+interface ApiKeyspace {
+  name: string
+  replication: Record<string, string>
+  durable_writes: boolean
+}
+
+interface ApiTable {
+  keyspace: string
+  name: string
+}
+
+interface ApiColumn {
+  keyspace: string
+  table: string
+  name: string
+  kind: string   // "partition_key" | "clustering" | "regular" | "static"
+  position: number
+  data_type: string
+}
+
+interface ApiRowsResult {
+  keyspace: string
+  table: string
+  rows: Record<string, unknown>[]
+  page_size: number
+}
+
+// ── Helpers ────────────────────────────────────────────────────────────────────
+
+/** System keyspaces we hide from the UI */
+const HIDDEN_KEYSPACES = new Set(['system', 'system_schema', 'system_auth', 'system_distributed', 'system_traces'])
+
+function mapKeyspace(k: ApiKeyspace): Keyspace {
+  const rf = parseInt(k.replication.replication_factor ?? '1', 10)
+  const cls = k.replication.class ?? ''
+  const strategy = cls.includes('NetworkTopology') ? 'NetworkTopologyStrategy' : 'SimpleStrategy'
+  return { name: k.name, replicationStrategy: strategy, replicationFactor: isNaN(rf) ? 1 : rf, tables: [] }
+}
+
+function mapColumns(apiCols: ApiColumn[]): Column[] {
+  return apiCols
+    .sort((a, b) => a.position - b.position)
+    .map(c => ({
+      name: c.name,
+      type: c.data_type,
+      isPartitionKey: c.kind === 'partition_key',
+      isClusteringKey: c.kind === 'clustering',
+      isPrimaryKey: c.kind === 'partition_key' || c.kind === 'clustering',
+    }))
+}
+
+// ── Composable ─────────────────────────────────────────────────────────────────
 
 export const useDatabase = () => {
-  const keyspaces = useState<Keyspace[]>('db_keyspaces', () => INITIAL_DATA)
-  const activeKeyspace = useState<string>('db_activeKeyspace', () => 'ecommerce')
+  const api = useApi()
+
+  const keyspaces = useState<Keyspace[]>('db_keyspaces', () => [])
+  const activeKeyspace = useState<string>('db_activeKeyspace', () => '')
   const activeTable = useState<string | null>('db_activeTable', () => null)
+
+  // Loading / error state exposed for the UI
+  const isLoadingKeyspaces = useState<boolean>('db_loadingKS', () => false)
+  const isLoadingTable = useState<boolean>('db_loadingTable', () => false)
+  const dbError = useState<string | null>('db_error', () => null)
 
   const currentKeyspace = computed(() => keyspaces.value.find(k => k.name === activeKeyspace.value))
   const currentTables = computed(() => currentKeyspace.value?.tables ?? [])
@@ -164,52 +97,173 @@ export const useDatabase = () => {
     return currentKeyspace.value?.tables.find(t => t.name === activeTable.value) ?? null
   })
 
-  function selectKeyspace(name: string) {
-    activeKeyspace.value = name
-    activeTable.value = null
-  }
-
-  function selectTable(name: string) {
-    activeTable.value = name
-  }
-
-  function createTable(keyspaceName: string, table: Table) {
-    const ks = keyspaces.value.find(k => k.name === keyspaceName)
-    if (!ks) throw new Error(`Keyspace '${keyspaceName}' not found`)
-    if (ks.tables.find(t => t.name === table.name)) throw new Error(`Table '${table.name}' already exists`)
-    ks.tables.push(table)
-  }
-
-  function dropTable(keyspaceName: string, tableName: string) {
-    const ks = keyspaces.value.find(k => k.name === keyspaceName)
-    if (ks) {
-      ks.tables = ks.tables.filter(t => t.name !== tableName)
-      if (activeTable.value === tableName) activeTable.value = null
+  // ── Fetch all keyspaces (called once on app mount) ──────────────────────────
+  async function loadKeyspaces() {
+    isLoadingKeyspaces.value = true
+    dbError.value = null
+    try {
+      const data = await api.get<ApiKeyspace[]>('/meta/keyspaces')
+      const visible = data.filter((k: ApiKeyspace) => !HIDDEN_KEYSPACES.has(k.name)).map(mapKeyspace)
+      keyspaces.value = visible
+      const activeKs = activeKeyspace.value && visible.find((k: Keyspace) => k.name === activeKeyspace.value)
+        ? activeKeyspace.value
+        : visible[0]?.name ?? ''
+      activeKeyspace.value = activeKs
+      if (activeKs) await loadTables(activeKs)
+    } catch (e: unknown) {
+      dbError.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      isLoadingKeyspaces.value = false
     }
   }
 
-  function insertRow(keyspaceName: string, tableName: string, row: Record<string, unknown>) {
-    const ks = keyspaces.value.find(k => k.name === keyspaceName)
-    const table = ks?.tables.find(t => t.name === tableName)
-    if (table) table.rows.push(row)
+  // ── Fetch tables for a keyspace (lazy: only if not yet loaded) ──────────────
+  async function loadTables(ksName: string) {
+    const ks = keyspaces.value.find(k => k.name === ksName)
+    if (!ks) return
+    try {
+      const data = await api.get<ApiTable[]>(`/meta/keyspaces/${ksName}/tables`)
+      // Preserve existing table objects (columns/rows already fetched)
+      const existing = new Map(ks.tables.map(t => [t.name, t]))
+      ks.tables = data.map(t => existing.get(t.name) ?? { name: t.name, columns: [], rows: [] })
+    } catch (e: unknown) {
+      dbError.value = e instanceof Error ? e.message : String(e)
+    }
   }
 
+  // ── Fetch columns + rows for a specific table ───────────────────────────────
+  async function loadTableData(ksName: string, tableName: string) {
+    isLoadingTable.value = true
+    dbError.value = null
+    try {
+      const [colData, rowData] = await Promise.all([
+        api.get<ApiColumn[]>(`/meta/keyspaces/${ksName}/tables/${tableName}/columns`),
+        api.get<ApiRowsResult>(`/meta/keyspaces/${ksName}/tables/${tableName}/rows?page_size=500`),
+      ])
+      const ks = keyspaces.value.find(k => k.name === ksName)
+      if (!ks) return
+      const table = ks.tables.find(t => t.name === tableName)
+      if (!table) return
+      table.columns = mapColumns(colData)
+      table.rows = rowData.rows
+    } catch (e: unknown) {
+      dbError.value = e instanceof Error ? e.message : String(e)
+    } finally {
+      isLoadingTable.value = false
+    }
+  }
+
+  // ── Select keyspace ─────────────────────────────────────────────────────────
+  async function selectKeyspace(name: string) {
+    activeKeyspace.value = name
+    activeTable.value = null
+    await loadTables(name)
+  }
+
+  // ── Select table (fetches data if columns not yet loaded) ───────────────────
+  async function selectTable(name: string) {
+    activeTable.value = name
+    const ks = currentKeyspace.value
+    if (!ks) return
+    const table = ks.tables.find(t => t.name === name)
+    if (!table || table.columns.length === 0) {
+      await loadTableData(ks.name, name)
+    }
+  }
+
+  // ── Create keyspace ─────────────────────────────────────────────────────────
+  async function createKeyspace(name: string, replicationFactor: number) {
+    await api.post('/meta/keyspaces', {
+      name,
+      replication: {
+        class: 'org.apache.cassandra.locator.SimpleStrategy',
+        replication_factor: String(replicationFactor),
+      },
+    })
+    await loadKeyspaces()
+    activeKeyspace.value = name
+  }
+
+  // ── Create table ────────────────────────────────────────────────────────────
+  async function createTable(keyspaceName: string, table: Table) {
+    const body = {
+      name: table.name,
+      columns: table.columns.map(c => ({
+        name: c.name,
+        data_type: c.type,
+        kind: c.isPartitionKey ? 'partition_key' : c.isClusteringKey ? 'clustering' : 'regular',
+      })),
+    }
+    await api.post(`/meta/keyspaces/${keyspaceName}/tables`, body)
+    // Add optimistically so UI updates immediately, then reload tables
+    await loadTables(keyspaceName)
+  }
+
+  // ── Drop table ──────────────────────────────────────────────────────────────
+  async function dropTable(keyspaceName: string, tableName: string) {
+    await api.del(`/meta/keyspaces/${keyspaceName}/tables/${tableName}`)
+    const ks = keyspaces.value.find(k => k.name === keyspaceName)
+    if (ks) ks.tables = ks.tables.filter(t => t.name !== tableName)
+    if (activeTable.value === tableName) activeTable.value = null
+  }
+
+  // ── Insert row ──────────────────────────────────────────────────────────────
+  async function insertRow(keyspaceName: string, tableName: string, row: Record<string, unknown>) {
+    await api.post(`/meta/keyspaces/${keyspaceName}/tables/${tableName}/rows`, { data: row })
+    await loadTableData(keyspaceName, tableName)
+  }
+
+  // ── Update row ──────────────────────────────────────────────────────────────
+  async function updateRow(
+    keyspaceName: string,
+    tableName: string,
+    set: Record<string, unknown>,
+    where: Record<string, unknown>,
+  ) {
+    await api.patch(`/meta/keyspaces/${keyspaceName}/tables/${tableName}/rows`, { set, where })
+    await loadTableData(keyspaceName, tableName)
+  }
+
+  // ── Delete row ──────────────────────────────────────────────────────────────
+  async function deleteRow(
+    keyspaceName: string,
+    tableName: string,
+    where: Record<string, unknown>,
+  ) {
+    await api.del(`/meta/keyspaces/${keyspaceName}/tables/${tableName}/rows`, { where })
+    await loadTableData(keyspaceName, tableName)
+  }
+
+  // ── Helpers ─────────────────────────────────────────────────────────────────
   function getTable(keyspaceName: string, tableName: string): Table | undefined {
     return keyspaces.value.find(k => k.name === keyspaceName)?.tables.find(t => t.name === tableName)
   }
 
   return {
+    // state
     keyspaces,
     activeKeyspace,
     activeTable,
+    isLoadingKeyspaces,
+    isLoadingTable,
+    dbError,
+    // computed
     currentKeyspace,
     currentTables,
     currentTableData,
+    // actions
+    loadKeyspaces,
+    loadTables,
+    loadTableData,
     selectKeyspace,
     selectTable,
+    createKeyspace,
     createTable,
     dropTable,
     insertRow,
+    updateRow,
+    deleteRow,
     getTable,
   }
 }
+

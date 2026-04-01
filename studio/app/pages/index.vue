@@ -18,13 +18,13 @@ const filteredTables = computed(() =>
   ),
 )
 
-function handleDrop(tableName: string) {
-  dropTable(activeKeyspace.value, tableName)
+async function handleDrop(tableName: string) {
+  await dropTable(activeKeyspace.value, tableName)
   confirmDrop.value = null
 }
 
-function handleCreated(tableName: string) {
-  selectTable(tableName)
+async function handleCreated(tableName: string) {
+  await selectTable(tableName)
 }
 </script>
 

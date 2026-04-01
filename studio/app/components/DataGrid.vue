@@ -3,6 +3,8 @@ import type { Table } from '~/composables/useDatabase'
 
 const props = defineProps<{ table: Table }>()
 
+const { activeKeyspace, activeTable, updateRow, deleteRow } = useDatabase()
+
 const PAGE_SIZE = 50
 const currentPage = ref(1)
 
@@ -31,38 +33,73 @@ function isNull(val: unknown): boolean {
 // ── Edit row ──────────────────────────────────────────────────────────────────
 const editingRowIndex = ref<number | null>(null)
 const editForm = ref<Record<string, string>>({})
+const isSaving = ref(false)
+const editError = ref<string | null>(null)
 
 function openEdit(pageRowIndex: number) {
   const absoluteIndex = (currentPage.value - 1) * PAGE_SIZE + pageRowIndex
   editingRowIndex.value = absoluteIndex
-  // Copy current values as strings for the form
+  editError.value = null
   const row = props.table.rows[absoluteIndex]!
   editForm.value = Object.fromEntries(
     props.table.columns.map(col => [col.name, formatValue(row[col.name])])
   )
 }
 
-function saveEdit() {
+async function saveEdit() {
   if (editingRowIndex.value === null) return
-  const row = props.table.rows[editingRowIndex.value]!
-  props.table.columns.forEach(col => {
-    const raw = editForm.value[col.name] ?? ''
-    // Coerce back to original type
-    const original = row[col.name]
-    if (typeof original === 'boolean') {
-      row[col.name] = raw.toLowerCase() === 'true'
-    } else if (typeof original === 'number') {
-      row[col.name] = Number(raw)
-    } else {
-      row[col.name] = raw
+  isSaving.value = true
+  editError.value = null
+  try {
+    const keyCols = props.table.columns.filter(c => c.isPartitionKey || c.isClusteringKey)
+    const nonKeyCols = props.table.columns.filter(c => !c.isPartitionKey && !c.isClusteringKey)
+
+    const where: Record<string, unknown> = {}
+    for (const col of keyCols) {
+      where[col.name] = editForm.value[col.name]
     }
-  })
-  closeEdit()
+
+    const set: Record<string, unknown> = {}
+    for (const col of nonKeyCols) {
+      const raw = editForm.value[col.name] ?? ''
+      const original = props.table.rows[editingRowIndex.value]![col.name]
+      if (typeof original === 'boolean') set[col.name] = raw.toLowerCase() === 'true'
+      else if (typeof original === 'number') set[col.name] = Number(raw)
+      else set[col.name] = raw
+    }
+
+    await updateRow(activeKeyspace.value, activeTable.value!, set, where)
+    closeEdit()
+  } catch (e: unknown) {
+    editError.value = e instanceof Error ? e.message : 'Failed to save changes'
+  } finally {
+    isSaving.value = false
+  }
+}
+
+async function deleteCurrentRow() {
+  if (editingRowIndex.value === null) return
+  isSaving.value = true
+  editError.value = null
+  try {
+    const keyCols = props.table.columns.filter(c => c.isPartitionKey || c.isClusteringKey)
+    const where: Record<string, unknown> = {}
+    for (const col of keyCols) {
+      where[col.name] = editForm.value[col.name]
+    }
+    await deleteRow(activeKeyspace.value, activeTable.value!, where)
+    closeEdit()
+  } catch (e: unknown) {
+    editError.value = e instanceof Error ? e.message : 'Failed to delete row'
+  } finally {
+    isSaving.value = false
+  }
 }
 
 function closeEdit() {
   editingRowIndex.value = null
   editForm.value = {}
+  editError.value = null
 }
 
 // ── Security Rules ────────────────────────────────────────────────────────────
@@ -470,19 +507,42 @@ const OP_COLOR: Record<Operation, string> = {
         </div>
 
         <!-- Footer -->
-        <div class="flex items-center justify-end gap-2.5 px-6 py-4 border-t border-slate-800 shrink-0">
-          <button
-            @click="closeEdit"
-            class="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors rounded-lg hover:bg-slate-800"
-          >
-            Cancel
-          </button>
-          <button
-            @click="saveEdit"
-            class="px-4 py-2 text-sm font-medium bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors"
-          >
-            Save Changes
-          </button>
+        <div class="flex flex-col gap-2 px-6 py-4 border-t border-slate-800 shrink-0">
+          <div v-if="editError" class="flex items-center gap-2 bg-rose-950/50 border border-rose-800 rounded-lg px-3 py-2">
+            <svg class="size-3.5 text-rose-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+            </svg>
+            <span class="text-xs text-rose-300">{{ editError }}</span>
+          </div>
+          <div class="flex items-center justify-between gap-2">
+            <button
+              @click="deleteCurrentRow"
+              :disabled="isSaving"
+              class="flex items-center gap-1.5 px-3 py-2 text-sm text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded-lg transition-colors disabled:opacity-40"
+            >
+              <svg class="size-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="3 6 5 6 21 6"/>
+                <path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/>
+              </svg>
+              Delete Row
+            </button>
+            <div class="flex items-center gap-2.5">
+              <button
+                @click="closeEdit"
+                :disabled="isSaving"
+                class="px-4 py-2 text-sm text-slate-400 hover:text-slate-200 transition-colors rounded-lg hover:bg-slate-800 disabled:opacity-40"
+              >
+                Cancel
+              </button>
+              <button
+                @click="saveEdit"
+                :disabled="isSaving"
+                class="px-4 py-2 text-sm font-medium bg-violet-600 hover:bg-violet-500 text-white rounded-lg transition-colors disabled:opacity-60"
+              >
+                {{ isSaving ? 'Saving…' : 'Save Changes' }}
+              </button>
+            </div>
+          </div>
         </div>
       </div>
     </div>

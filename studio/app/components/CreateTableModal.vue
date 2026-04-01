@@ -29,9 +29,8 @@ function removeColumn(index: number) {
   columns.value.splice(index, 1)
 }
 
-function handleCreate() {
+async function handleCreate() {
   error.value = ''
-
   if (!tableName.value.trim()) {
     error.value = 'Table name is required'
     return
@@ -61,7 +60,7 @@ function handleCreate() {
   }
 
   try {
-    createTable(props.keyspaceName, {
+    await createTable(props.keyspaceName, {
       name: tableName.value.trim().toLowerCase(),
       columns: columns.value.map(c => ({
         name: c.name.trim().toLowerCase(),
