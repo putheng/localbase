@@ -1,0 +1,7 @@
+target
+target-meta
+.git
+.gitignore
+Dockerfile
+README.md
+.env
