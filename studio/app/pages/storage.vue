@@ -1,5 +1,5 @@
 ﻿<script setup lang="ts">
-import { type Bucket, type Folder, type StorageFile } from '~/composables/useStorageApi'
+import { useStorageApi, type Bucket, type Folder, type StorageFile } from '~/composables/useStorageApi'
 
 const {
   listBuckets,
@@ -10,6 +10,7 @@ const {
   deleteFolder,
   listFiles,
   createFile,
+  uploadFileContent,
   deleteFile,
 } = useStorageApi()
 
@@ -28,6 +29,8 @@ const breadcrumbs = ref<{ id: string; name: string }[]>([])
 const fileSearch = ref('')
 const selectedFileIds = ref<Set<string>>(new Set())
 const isDraggingOver = ref(false)
+const isUploading = ref(false)
+const uploadProgress = ref({ current: 0, total: 0, name: '' })
 
 // ── Modals ─────────────────────────────────────────────────────────────────────
 
@@ -49,15 +52,15 @@ const deleteLoading = ref(false)
 
 // ── Computed ───────────────────────────────────────────────────────────────────
 
-const activeBucket = computed(() => buckets.value.find(b => b.id === activeBucketId.value))
+const activeBucket = computed(() => buckets.value.find((b: Bucket) => b.id === activeBucketId.value))
 
 const filteredFiles = computed(() =>
-  files.value.filter(f => f.name.toLowerCase().includes(fileSearch.value.toLowerCase())),
+  files.value.filter((f: StorageFile) => f.name.toLowerCase().includes(fileSearch.value.toLowerCase())),
 )
 
 const allSelected = computed(() =>
   filteredFiles.value.length > 0 &&
-  filteredFiles.value.every(f => selectedFileIds.value.has(f.id)),
+  filteredFiles.value.every((f: StorageFile) => selectedFileIds.value.has(f.id)),
 )
 
 // ── Data loading ───────────────────────────────────────────────────────────────
@@ -68,7 +71,7 @@ async function loadBuckets() {
   try {
     buckets.value = await listBuckets()
     if (buckets.value.length > 0 && !activeBucketId.value) {
-      activeBucketId.value = buckets.value[0].id
+      activeBucketId.value = buckets.value[0]!.id
     }
   } catch (e: unknown) {
     apiError.value = String(e)
@@ -123,7 +126,7 @@ function navigateTo(index: number) {
     currentFolderId.value = undefined
   } else {
     breadcrumbs.value = breadcrumbs.value.slice(0, index + 1)
-    currentFolderId.value = breadcrumbs.value[index].id
+    currentFolderId.value = breadcrumbs.value[index]!.id
   }
 }
 
@@ -134,7 +137,7 @@ async function addBucket() {
   const name = newBucketName.value.trim().toLowerCase().replace(/\s+/g, '-')
   if (!name) { newBucketError.value = 'Bucket name is required'; return }
   if (!/^[a-z0-9-]+$/.test(name)) { newBucketError.value = 'Only lowercase letters, numbers, and hyphens allowed'; return }
-  if (buckets.value.find(b => b.name === name)) { newBucketError.value = 'Bucket name already exists'; return }
+  if (buckets.value.find((b: Bucket) => b.name === name)) { newBucketError.value = 'Bucket name already exists'; return }
 
   newBucketLoading.value = true
   try {
@@ -155,7 +158,7 @@ async function removeBucket(id: string) {
   deleteLoading.value = true
   try {
     await deleteBucket(id)
-    buckets.value = buckets.value.filter(b => b.id !== id)
+    buckets.value = buckets.value.filter((b: Bucket) => b.id !== id)
     if (activeBucketId.value === id)
       activeBucketId.value = buckets.value[0]?.id ?? ''
     confirmDeleteBucket.value = null
@@ -190,7 +193,7 @@ async function removeFolder(folder: Folder) {
   deleteLoading.value = true
   try {
     await deleteFolder(activeBucketId.value, folder.id)
-    folders.value = folders.value.filter(f => f.id !== folder.id)
+    folders.value = folders.value.filter((f: Folder) => f.id !== folder.id)
     confirmDeleteFolder.value = null
   } catch (e: unknown) {
     apiError.value = String(e)
@@ -203,9 +206,9 @@ async function removeFolder(folder: Folder) {
 
 function toggleSelectAll() {
   if (allSelected.value) {
-    filteredFiles.value.forEach(f => selectedFileIds.value.delete(f.id))
+    filteredFiles.value.forEach((f: StorageFile) => selectedFileIds.value.delete(f.id))
   } else {
-    filteredFiles.value.forEach(f => selectedFileIds.value.add(f.id))
+    filteredFiles.value.forEach((f: StorageFile) => selectedFileIds.value.add(f.id))
   }
 }
 
@@ -214,28 +217,35 @@ function toggleFile(id: string) {
   else selectedFileIds.value.add(id)
 }
 
-async function uploadFiles(names: string[]) {
+async function uploadFiles(rawFiles: File[]) {
   if (!activeBucketId.value) return
-  for (const name of names) {
+  isUploading.value = true
+  uploadProgress.value = { current: 0, total: rawFiles.length, name: '' }
+  for (const rawFile of rawFiles) {
+    uploadProgress.value.current += 1
+    uploadProgress.value.name = rawFile.name
     try {
-      const file = await createFile(activeBucketId.value, {
-        name,
-        size: Math.floor(Math.random() * 500000) + 5000,
-        content_type: guessType(name),
+      const meta = await createFile(activeBucketId.value, {
+        name: rawFile.name,
+        size: rawFile.size,
+        content_type: rawFile.type || guessType(rawFile.name),
         folder_id: currentFolderId.value,
       })
-      files.value.push(file)
+      await uploadFileContent(activeBucketId.value, meta.id, rawFile)
+      meta.size = rawFile.size
+      files.value.push(meta)
     } catch (e: unknown) {
       apiError.value = String(e)
     }
   }
+  isUploading.value = false
 }
 
 async function removeFile(file: StorageFile) {
   deleteLoading.value = true
   try {
     await deleteFile(activeBucketId.value, file.id)
-    files.value = files.value.filter(f => f.id !== file.id)
+    files.value = files.value.filter((f: StorageFile) => f.id !== file.id)
     selectedFileIds.value.delete(file.id)
     confirmDeleteFile.value = null
   } catch (e: unknown) {
@@ -248,11 +258,11 @@ async function removeFile(file: StorageFile) {
 async function deleteSelected() {
   const ids = [...selectedFileIds.value]
   for (const id of ids) {
-    const file = files.value.find(f => f.id === id)
+    const file = files.value.find((f: StorageFile) => f.id === id)
     if (!file) continue
     try {
       await deleteFile(activeBucketId.value, id)
-      files.value = files.value.filter(f => f.id !== id)
+      files.value = files.value.filter((f: StorageFile) => f.id !== id)
       selectedFileIds.value.delete(id)
     } catch { /* continue */ }
   }
@@ -290,12 +300,12 @@ function guessType(name: string): string {
 function onDropFiles(e: DragEvent) {
   isDraggingOver.value = false
   const dropped = Array.from(e.dataTransfer?.files ?? [])
-  if (dropped.length) uploadFiles(dropped.map(f => f.name))
+  if (dropped.length) uploadFiles(dropped)
 }
 
 function onFileInputChange(e: Event) {
   const picked = Array.from((e.target as HTMLInputElement).files ?? [])
-  if (picked.length) uploadFiles(picked.map(f => f.name))
+  if (picked.length) uploadFiles(picked)
   ;(e.target as HTMLInputElement).value = ''
 }
 </script>
@@ -476,8 +486,19 @@ function onFileInputChange(e: Event) {
             <p class="text-sm font-medium text-violet-300">Drop files to upload</p>
           </div>
 
+          <!-- Upload spinner overlay -->
+          <div v-if="isUploading" class="absolute inset-0 z-20 flex flex-col items-center justify-center gap-3 bg-slate-950/60 backdrop-blur-sm">
+            <div class="size-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
+            <div class="flex flex-col items-center gap-1">
+              <p class="text-xs font-medium text-slate-200">
+                Uploading {{ uploadProgress.current }} / {{ uploadProgress.total }}
+              </p>
+              <p class="text-xs text-slate-500 max-w-48 truncate text-center">{{ uploadProgress.name }}</p>
+            </div>
+          </div>
+
           <!-- Loading spinner -->
-          <div v-if="loading" class="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/40">
+          <div v-if="loading && !isUploading" class="absolute inset-0 z-10 flex items-center justify-center bg-slate-950/40">
             <div class="size-5 border-2 border-violet-500 border-t-transparent rounded-full animate-spin"></div>
           </div>
 
@@ -756,7 +777,7 @@ function onFileInputChange(e: Event) {
             </div>
             <div>
               <h3 class="text-sm font-semibold text-slate-100">Delete bucket?</h3>
-              <p class="text-xs text-slate-500 mt-1">All files and folders inside <span class="text-slate-300 font-medium">{{ buckets.find(b => b.id === confirmDeleteBucket)?.name }}</span> will be permanently deleted.</p>
+              <p class="text-xs text-slate-500 mt-1">All files and folders inside <span class="text-slate-300 font-medium">{{ buckets.find((b: Bucket) => b.id === confirmDeleteBucket)?.name }}</span> will be permanently deleted.</p>
             </div>
           </div>
           <div class="flex gap-2 justify-end">

@@ -96,6 +96,13 @@ export function useStorageApi() {
       method: 'DELETE',
     })
 
+  const uploadFileContent = (bucketId: string, fileId: string, file: File) =>
+    $fetch<{ message: string }>(`${base}/storage/buckets/${bucketId}/files/${fileId}/upload`, {
+      method: 'PUT',
+      body: file,
+      headers: { 'Content-Type': file.type || 'application/octet-stream' },
+    })
+
   return {
     listBuckets,
     createBucket,
@@ -105,6 +112,7 @@ export function useStorageApi() {
     deleteFolder,
     listFiles,
     createFile,
+    uploadFileContent,
     deleteFile,
   }
 }

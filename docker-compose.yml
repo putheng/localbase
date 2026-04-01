@@ -23,7 +23,7 @@ services:
       start_period: 40s
     restart: unless-stopped
 
-  scylladb-meta:
+  meta:
     build:
       context: ./scylladb-meta
       dockerfile: Dockerfile
@@ -49,6 +49,26 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  minio:
+    image: minio/minio:latest
+    container_name: localbase-minio
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    restart: unless-stopped
+
   storage:
     build:
       context: ./storage
@@ -62,10 +82,16 @@ services:
       STORAGE_API_HOST: 0.0.0.0
       STORAGE_API_PORT: 8081
       CORS_ORIGIN: http://localhost:3000
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: minioadmin
+      MINIO_SECRET_KEY: minioadmin
+      MINIO_REGION: us-east-1
     ports:
       - "8081:8081"
     depends_on:
       scylladb:
+        condition: service_healthy
+      minio:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
@@ -96,3 +122,4 @@ services:
 
 volumes:
   scylla-data:
+  minio-data:

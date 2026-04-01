@@ -66,6 +66,13 @@ pub async fn create_bucket(
         .await
         .map_err(|e| ApiError::Db(e.to_string()))?;
 
+    data.s3
+        .create_bucket()
+        .bucket(&name)
+        .send()
+        .await
+        .map_err(|e| ApiError::Storage(e.to_string()))?;
+
     Ok(web::Json(BucketResponse {
         id: id.to_string(),
         name,
@@ -82,7 +89,59 @@ pub async fn delete_bucket(
 ) -> Result<impl Responder, ApiError> {
     let bucket_id = parse_uuid(&path.bucket_id, "bucket_id")?;
 
-    // Cascade: files → folders → bucket
+    // Fetch the bucket name for MinIO operations
+    let result = data
+        .session
+        .query_unpaged(
+            "SELECT name FROM storage.buckets WHERE id = ?",
+            (bucket_id,),
+        )
+        .await
+        .map_err(|e| ApiError::Db(e.to_string()))?;
+
+    let rows = result
+        .into_rows_result()
+        .map_err(|e| ApiError::Db(e.to_string()))?;
+
+    let bucket_name = rows
+        .rows::<(String,)>()
+        .map_err(|e| ApiError::Db(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .map(|(name,)| name)
+        .next()
+        .ok_or_else(|| ApiError::NotFound(format!("Bucket {bucket_id} not found")))?;
+
+    // Delete all objects in the MinIO bucket before deleting the bucket itself
+    let list_result = data
+        .s3
+        .list_objects_v2()
+        .bucket(&bucket_name)
+        .send()
+        .await
+        .map_err(|e| ApiError::Storage(e.to_string()))?;
+
+    if let Some(objects) = list_result.contents {
+        for obj in objects {
+            if let Some(key) = obj.key {
+                data.s3
+                    .delete_object()
+                    .bucket(&bucket_name)
+                    .key(&key)
+                    .send()
+                    .await
+                    .map_err(|e| ApiError::Storage(e.to_string()))?;
+            }
+        }
+    }
+
+    data.s3
+        .delete_bucket()
+        .bucket(&bucket_name)
+        .send()
+        .await
+        .map_err(|e| ApiError::Storage(e.to_string()))?;
+
+    // Cascade: files → folders → bucket in ScyllaDB
     data.session
         .query_unpaged(
             "DELETE FROM storage.files WHERE bucket_id = ?",
@@ -111,3 +170,4 @@ pub async fn delete_bucket(
         message: format!("Bucket {bucket_id} deleted"),
     }))
 }
+

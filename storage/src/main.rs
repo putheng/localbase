@@ -11,6 +11,7 @@ use scylla::SessionBuilder;
 mod error;
 mod handlers;
 mod helpers;
+mod minio;
 mod migrations;
 mod models;
 mod state;
@@ -33,6 +34,14 @@ async fn main() -> std::io::Result<()> {
     let allowed_origin =
         env::var("CORS_ORIGIN").unwrap_or_else(|_| "http://localhost:3000".to_string());
 
+    let minio_endpoint =
+        env::var("MINIO_ENDPOINT").unwrap_or_else(|_| "http://127.0.0.1:9000".to_string());
+    let minio_access_key =
+        env::var("MINIO_ACCESS_KEY").unwrap_or_else(|_| "minioadmin".to_string());
+    let minio_secret_key =
+        env::var("MINIO_SECRET_KEY").unwrap_or_else(|_| "minioadmin".to_string());
+    let minio_region = env::var("MINIO_REGION").unwrap_or_else(|_| "us-east-1".to_string());
+
     let scylla_uri = format!("{}:{}", host, port);
     info!("Connecting to ScyllaDB at {}", scylla_uri);
 
@@ -48,8 +57,12 @@ async fn main() -> std::io::Result<()> {
         .await
         .map_err(|e| std::io::Error::other(format!("Migration failed: {e}")))?;
 
+    info!("Connecting to MinIO at {}", minio_endpoint);
+    let s3 = minio::build_client(&minio_endpoint, &minio_access_key, &minio_secret_key, &minio_region);
+
     let state = AppState {
         session: Arc::new(session),
+        s3,
     };
 
     let bind_addr = format!("{}:{}", api_host, api_port);
@@ -58,7 +71,7 @@ async fn main() -> std::io::Result<()> {
     HttpServer::new(move || {
         let cors = Cors::default()
             .allowed_origin(&allowed_origin)
-            .allowed_methods(["GET", "POST", "DELETE"])
+            .allowed_methods(["GET", "POST", "PUT", "DELETE"])
             .allowed_headers([header::CONTENT_TYPE, header::ACCEPT])
             .supports_credentials()
             .max_age(3600);
@@ -86,6 +99,7 @@ async fn main() -> std::io::Result<()> {
             .service(handlers::folders::delete_folder)
             .service(handlers::files::list_files)
             .service(handlers::files::create_file)
+            .service(handlers::files::upload_file)
             .service(handlers::files::delete_file)
     })
     .bind(&bind_addr)

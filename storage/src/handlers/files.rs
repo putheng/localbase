@@ -1,4 +1,7 @@
-use actix_web::{delete, get, post, web, Responder};
+use actix_web::{delete, get, post, put, web, HttpRequest, Responder};
+use aws_sdk_s3::primitives::ByteStream;
+use bytes::Bytes;
+use futures_util::StreamExt;
 use uuid::Uuid;
 
 use crate::{
@@ -151,6 +154,105 @@ pub async fn create_file(
     }))
 }
 
+/// PUT /storage/buckets/{bucket_id}/files/{file_id}/upload
+/// Streams the raw request body to MinIO at the file's storage_path,
+/// then updates the file size in ScyllaDB.
+#[put("/storage/buckets/{bucket_id}/files/{file_id}/upload")]
+pub async fn upload_file(
+    data: web::Data<AppState>,
+    path: web::Path<BucketFilePath>,
+    req: HttpRequest,
+    mut payload: web::Payload,
+) -> Result<impl Responder, ApiError> {
+    let bucket_id = parse_uuid(&path.bucket_id, "bucket_id")?;
+    let file_id = parse_uuid(&path.file_id, "file_id")?;
+
+    // Fetch bucket name and file metadata from ScyllaDB
+    let bucket_row = data
+        .session
+        .query_unpaged(
+            "SELECT name FROM storage.buckets WHERE id = ?",
+            (bucket_id,),
+        )
+        .await
+        .map_err(|e| ApiError::Db(e.to_string()))?;
+
+    let bucket_rows = bucket_row
+        .into_rows_result()
+        .map_err(|e| ApiError::Db(e.to_string()))?;
+
+    let bucket_name = bucket_rows
+        .rows::<(String,)>()
+        .map_err(|e| ApiError::Db(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .map(|(n,)| n)
+        .next()
+        .ok_or_else(|| ApiError::NotFound(format!("bucket {bucket_id} not found")))?;
+
+    let file_row = data
+        .session
+        .query_unpaged(
+            "SELECT storage_path, content_type FROM storage.files WHERE bucket_id = ? AND id = ?",
+            (bucket_id, file_id),
+        )
+        .await
+        .map_err(|e| ApiError::Db(e.to_string()))?;
+
+    let file_rows = file_row
+        .into_rows_result()
+        .map_err(|e| ApiError::Db(e.to_string()))?;
+
+    let (storage_path, content_type) = file_rows
+        .rows::<(Option<String>, Option<String>)>()
+        .map_err(|e| ApiError::Db(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .next()
+        .map(|(sp, ct)| (sp.unwrap_or_default(), ct.unwrap_or_default()))
+        .ok_or_else(|| ApiError::NotFound(format!("file {file_id} not found")))?;
+
+    // Read entire body into memory
+    let mut body_bytes = Vec::new();
+    while let Some(chunk) = payload.next().await {
+        let chunk = chunk.map_err(|e| ApiError::BadRequest(e.to_string()))?;
+        body_bytes.extend_from_slice(&chunk);
+    }
+    let size = body_bytes.len() as i64;
+
+    // Determine content type: prefer request header over stored value
+    let ct = req
+        .headers()
+        .get(actix_web::http::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .map(|s| s.to_owned())
+        .unwrap_or(content_type);
+
+    // Upload to MinIO
+    data.s3
+        .put_object()
+        .bucket(&bucket_name)
+        .key(&storage_path)
+        .content_type(&ct)
+        .body(ByteStream::from(Bytes::from(body_bytes)))
+        .send()
+        .await
+        .map_err(|e| ApiError::Storage(e.to_string()))?;
+
+    // Update file size + content_type in ScyllaDB
+    let now = now_ts();
+    data.session
+        .query_unpaged(
+            "UPDATE storage.files SET size = ?, content_type = ?, updated_at = ? \
+             WHERE bucket_id = ? AND id = ?",
+            (size, ct.clone(), now, bucket_id, file_id),
+        )
+        .await
+        .map_err(|e| ApiError::Db(e.to_string()))?;
+
+    Ok(web::Json(MessageResponse {
+        message: format!("File {file_id} uploaded ({size} bytes)"),
+    }))
+}
+
 #[delete("/storage/buckets/{bucket_id}/files/{file_id}")]
 pub async fn delete_file(
     data: web::Data<AppState>,
@@ -159,10 +261,11 @@ pub async fn delete_file(
     let bucket_id = parse_uuid(&path.bucket_id, "bucket_id")?;
     let file_id = parse_uuid(&path.file_id, "file_id")?;
 
+    // Fetch folder_id + storage_path + bucket name for cleanup
     let result = data
         .session
         .query_unpaged(
-            "SELECT folder_id FROM storage.files WHERE bucket_id = ? AND id = ?",
+            "SELECT folder_id, storage_path FROM storage.files WHERE bucket_id = ? AND id = ?",
             (bucket_id, file_id),
         )
         .await
@@ -172,13 +275,46 @@ pub async fn delete_file(
         .into_rows_result()
         .map_err(|e| ApiError::Db(e.to_string()))?;
 
-    let folder_id = rows
-        .rows::<(Uuid,)>()
+    let (folder_id, storage_path) = rows
+        .rows::<(Uuid, Option<String>)>()
         .map_err(|e| ApiError::Db(e.to_string()))?
         .filter_map(|r| r.ok())
         .next()
-        .map(|(fid,)| fid)
+        .map(|(fid, sp)| (fid, sp.unwrap_or_default()))
         .ok_or_else(|| ApiError::NotFound(format!("file {file_id} not found")))?;
+
+    // Fetch bucket name for MinIO
+    let bucket_row = data
+        .session
+        .query_unpaged(
+            "SELECT name FROM storage.buckets WHERE id = ?",
+            (bucket_id,),
+        )
+        .await
+        .map_err(|e| ApiError::Db(e.to_string()))?;
+
+    let bucket_rows = bucket_row
+        .into_rows_result()
+        .map_err(|e| ApiError::Db(e.to_string()))?;
+
+    let bucket_name = bucket_rows
+        .rows::<(String,)>()
+        .map_err(|e| ApiError::Db(e.to_string()))?
+        .filter_map(|r| r.ok())
+        .map(|(n,)| n)
+        .next()
+        .ok_or_else(|| ApiError::NotFound(format!("bucket {bucket_id} not found")))?;
+
+    // Delete from MinIO (ignore not-found — object may not have been uploaded yet)
+    if !storage_path.is_empty() {
+        let _ = data
+            .s3
+            .delete_object()
+            .bucket(&bucket_name)
+            .key(&storage_path)
+            .send()
+            .await;
+    }
 
     data.session
         .query_unpaged(
@@ -201,3 +337,4 @@ pub async fn delete_file(
         message: format!("File {file_id} deleted"),
     }))
 }
+

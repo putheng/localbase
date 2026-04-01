@@ -15,6 +15,8 @@ pub enum ApiError {
     BadRequest(String),
     #[error("not found: {0}")]
     NotFound(String),
+    #[error("storage error: {0}")]
+    Storage(String),
 }
 
 impl actix_web::ResponseError for ApiError {
@@ -22,7 +24,7 @@ impl actix_web::ResponseError for ApiError {
         let status = match self {
             ApiError::BadRequest(_) => actix_web::http::StatusCode::BAD_REQUEST,
             ApiError::NotFound(_) => actix_web::http::StatusCode::NOT_FOUND,
-            ApiError::Db(_) => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
+            ApiError::Db(_) | ApiError::Storage(_) => actix_web::http::StatusCode::INTERNAL_SERVER_ERROR,
         };
         HttpResponse::build(status).json(ApiErrorBody {
             error: self.to_string(),
