@@ -114,7 +114,7 @@ services:
     ports:
       - "3000:3000"
     depends_on:
-      scylladb-meta:
+      meta:
         condition: service_healthy
       storage:
         condition: service_healthy
