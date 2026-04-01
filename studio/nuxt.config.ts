@@ -8,6 +8,7 @@ export default defineNuxtConfig({
   runtimeConfig: {
     public: {
       apiBase: 'http://localhost:8080',
+      storageBase: 'http://localhost:8081',
     },
   },
   vite: {

@@ -49,6 +49,32 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  storage:
+    build:
+      context: ./storage
+      dockerfile: Dockerfile
+    container_name: localbase-storage
+    environment:
+      SCYLLA_HOST: scylladb
+      SCYLLA_PORT: 9042
+      SCYLLA_USERNAME: cassandra
+      SCYLLA_PASSWORD: cassandra
+      STORAGE_API_HOST: 0.0.0.0
+      STORAGE_API_PORT: 8081
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "8081:8081"
+    depends_on:
+      scylladb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
   studio:
     build:
       context: ./studio
@@ -56,12 +82,15 @@ services:
     container_name: localbase-studio
     environment:
       NUXT_PUBLIC_API_BASE: http://localhost:8080
+      NUXT_PUBLIC_STORAGE_BASE: http://localhost:8081
       NITRO_HOST: 0.0.0.0
       NITRO_PORT: 3000
     ports:
       - "3000:3000"
     depends_on:
       scylladb-meta:
+        condition: service_healthy
+      storage:
         condition: service_healthy
     restart: unless-stopped
 
