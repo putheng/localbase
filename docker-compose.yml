@@ -101,6 +101,33 @@ services:
       start_period: 20s
     restart: unless-stopped
 
+  api:
+    build:
+      context: ./scylladb-api
+      dockerfile: Dockerfile
+    container_name: localbase-scylladb-api
+    environment:
+      SCYLLA_HOST: scylladb
+      SCYLLA_PORT: 9042
+      SCYLLA_USERNAME: cassandra
+      SCYLLA_PASSWORD: cassandra
+      SCYLLA_KEYSPACE: public
+      API_HOST: 0.0.0.0
+      API_PORT: 8082
+      CORS_ORIGIN: http://localhost:3000
+    ports:
+      - "8082:8082"
+    depends_on:
+      scylladb:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    restart: unless-stopped
+
   studio:
     build:
       context: ./studio
